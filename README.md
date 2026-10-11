@@ -20,6 +20,7 @@ skills new my-skill            # scaffold a new skill directory
 skills list                    # catalog all skills under the current tree
 skills validate                # validate every SKILL.md frontmatter
 skills doctor                  # check the local environment for optional features
+skills watch                   # poll SKILL.md files and print reload hints on change
 ```
 
 ## Development

@@ -2,8 +2,9 @@
 import argparse
 import os
 import pathlib
-import re
+import socket
 import sys
+import time
 
 REQUIRED_KEYS = ("name", "description")
 
@@ -42,15 +43,59 @@ def validate(root):
     return bad
 
 
+def bus_socket():
+    """Return the user session bus socket path, or None if unset."""
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
+    return pathlib.Path(runtime_dir) / "bus" if runtime_dir else None
+
+
 def doctor():
     """Report optional-feature availability. Informational only."""
     checks = {}
-    runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
-    bus = pathlib.Path(runtime_dir) / "bus" if runtime_dir else None
+    bus = bus_socket()
     checks["user session bus"] = bool(bus and bus.is_socket())
     checks["git"] = bool(_on_path("git"))
     for name, ok in checks.items():
         print(f"{name}: {'ok' if ok else 'missing'}")
+    return 0
+
+
+def watch(root, verbose=False, interval=0.5, iterations=None):
+    """Poll SKILL.md files and print reload hints on change.
+
+    The in-place reload hint is delivered through the user session bus
+    when a bus socket is present, per `skills doctor`.
+    """
+    bus = bus_socket()
+
+    def snap():
+        return {str(p): p.stat().st_mtime for p in sorted(root.rglob("SKILL.md"))}
+
+    before = snap()
+    n = 0
+    while iterations is None or n < iterations:
+        time.sleep(interval)
+        n += 1
+        after = snap()
+        diff = sorted(
+            set(before) ^ set(after)
+            | {p for p in before if p in after and before[p] != after[p]}
+        )
+        if diff:
+            if bus and bus.is_socket():
+                try:
+                    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    s.settimeout(2)
+                    s.connect(str(bus))
+                    s.close()
+                    if verbose:
+                        print("reload hint via user session bus")
+                except OSError as e:
+                    print(f"reload hint failed: user bus unreachable: {e}", file=sys.stderr)
+                    return 1
+            for p in diff:
+                print(f"changed: {p}")
+        before = after
     return 0
 
 
@@ -71,6 +116,11 @@ def main(argv=None):
     sub.add_parser("list", help="Catalog skills under the current tree.")
     sub.add_parser("validate", help="Validate every SKILL.md frontmatter.")
     sub.add_parser("doctor", help="Check the local environment.")
+
+    w = sub.add_parser("watch", help="Poll SKILL.md files and print reload hints.")
+    w.add_argument("--verbose", action="store_true")
+    w.add_argument("--interval", type=float, default=0.5)
+    w.add_argument("--iterations", type=int, default=None)
 
     a = p.parse_args(argv)
     root = pathlib.Path.cwd()
@@ -97,6 +147,8 @@ def main(argv=None):
         return 1 if bad else 0
     if a.cmd == "doctor":
         return doctor()
+    if a.cmd == "watch":
+        return watch(root, verbose=a.verbose, interval=a.interval, iterations=a.iterations)
     return 2
 
 
