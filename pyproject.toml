@@ -1,0 +1,16 @@
+[project]
+name = "codex-skills"
+version = "0.2.0"
+description = "Opinionated CLI for scaffolding, validating, and cataloguing agent skills."
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+skills = "skills.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
